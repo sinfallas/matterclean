@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# Made by Sinfallas <sinfallas@yahoo.com>
+# Licence: GPL-2
+LC_ALL=C
+SECONDS=0
+LOCKFILE="/tmp/$(basename $0)_$(whoami)"
+LOCKFD="150"
+miarchi="uploaded_files.txt"
+menos=$(date -d 'now - 4 weeks' +%m/%d/%Y)
+antes=$(date -d "$menos 01:00:00" +"%s")
+casi=$(( antes * 1000 ))
+input="/tmp/mysqldump/$miarchi"
+
+function clean_1() {
+        rm -f $LOCKFILE
+}
+
+function lock() {
+        echo {LOCKFD}>$LOCKFILE
+        flock -n $LOCKFD
+}
+
+function exit_error() {
+        echo -e "\e[00;31mAn instance is already running. Coming out\e[00m"
+        exit 1
+}
+
+trap "clean_1; exit" 0 1 2 3 15
+
+if [[ "$EUID" != "0" ]]; then
+    echo "ERROR: Must be root"
+    exit 1
+fi
+
+lock || exit_error
+
+clear
+mkdir -p /tmp/mysqldump/
+chown -R mysql:mysql /tmp/mysqldump/
+rm -f /tmp/mysqldump/*
+
+mysql -u USER -p'PASSWORD' -D mattermost -e "SELECT Path FROM FileInfo WHERE CreateAt < $casi INTO OUTFILE '/tmp/mysqldump/$miarchi' FIELDS TERMINATED BY ',' ENCLOSED BY '' LINES TERMINATED BY '\n';"
+
+while IFS= read -r line
+do
+    rm "/opt/mattermost/data/$line"
+done < "$input"
+
+mysql -u mmuser -p'soporter3d' -D mattermost -e "DELETE FROM FileInfo WHERE CreateAt < $casi;"
+mysql -u mmuser -p'soporter3d' -D mattermost -e "DELETE FROM Posts WHERE CreateAt < $casi;"
+echo "Finished."
+exit 0
+
